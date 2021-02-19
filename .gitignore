@@ -1,0 +1,14 @@
+# sbt specific
+.lib/
+dist/*
+target/
+lib_managed/
+src_managed/
+project/boot/
+project/plugins/project/
+.bsp
+.idea/
+.idea_modules/
+project/project/
+project/metals.sbt
+
