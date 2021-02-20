@@ -233,9 +233,9 @@ class ModuleDef(var name: String) {
     }
   }
 
-  private def println(sb: mutable.StringBuilder, str: String) {
-    sb ++ str
-    sb ++ "\n"
+  private def println(sb: mutable.StringBuilder, str: String): Unit = {
+    sb.append(str)
+    sb.append("\n")
   }
 
 }
