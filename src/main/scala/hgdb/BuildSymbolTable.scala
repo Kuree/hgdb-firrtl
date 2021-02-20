@@ -3,22 +3,8 @@ package hgdb
 // Compiler Infrastructure
 
 import firrtl._
-import firrtl.ir.{
-  Block,
-  BundleType,
-  Conditionally,
-  Connect,
-  DefInstance,
-  DefRegister,
-  DefWire,
-  Field,
-  FileInfo,
-  Info,
-  Reference,
-  SubField,
-  SubIndex,
-  Type
-}
+import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefRegister, DefWire, Field, FileInfo, Info, Reference, SubField, SubIndex, Type}
+import firrtl.passes.Pass
 import firrtl.{CircuitState, Transform}
 import firrtl.stage.Forms
 import firrtl.stage.TransformManager.TransformDependency
@@ -264,18 +250,13 @@ class SymbolTable {
 
 }
 
-class AnalyzeCircuit extends Transform with DependencyAPIMigration {
-  // see https://gist.github.com/seldridge/0959d714fba6857c5f71ebc7c9044fcf
-  override def prerequisites: Seq[TransformDependency] = Forms.HighForm
-
-  def execute(state: CircuitState): CircuitState = {
-    val circuit = state.circuit
+class AnalyzeSymbolTable {
+  def execute(circuit: Circuit): Unit = {
     val table = new SymbolTable()
     circuit.foreachModule(visitModule(table))
 
     // serialize to stdout
     table.serialize()
-    state
   }
 
   def visitModule(table: SymbolTable)(m: DefModule): Unit = {
@@ -330,5 +311,17 @@ class AnalyzeCircuit extends Transform with DependencyAPIMigration {
       case _ =>
         ""
     }
+  }
+}
+
+class AnalyzeCircuit extends Transform with DependencyAPIMigration {
+  // see https://gist.github.com/seldridge/0959d714fba6857c5f71ebc7c9044fcf
+  override def prerequisites: Seq[TransformDependency] = Forms.HighForm
+
+  def execute(state: CircuitState): CircuitState = {
+    val circuit = state.circuit
+    val pass = new AnalyzeSymbolTable()
+    pass.execute(circuit)
+    state
   }
 }
