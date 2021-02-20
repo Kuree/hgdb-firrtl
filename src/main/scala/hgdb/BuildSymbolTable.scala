@@ -1,14 +1,13 @@
 package hgdb
 
-// Compiler Infrastructure
 
 import firrtl._
 import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefRegister, DefWire, Field, FileInfo, Info, Reference, SubField, SubIndex, Type}
-import firrtl.passes.Pass
 import firrtl.{CircuitState, Transform}
 import firrtl.stage.Forms
 import firrtl.stage.TransformManager.TransformDependency
 
+import java.io.{PrintWriter, File}
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 // Firrtl IR classes
@@ -41,6 +40,7 @@ class Stack {
 }
 
 case class StatementInfo(fn_info: String, cond: String, target: Expression)
+
 case class ModuleInstantiation(def_name: String, inst_name: String)
 
 class ModuleDef(var name: String) {
@@ -179,43 +179,45 @@ class ModuleDef(var name: String) {
   }
 
   // need to serialize to toml format that can be directly converted into
-  def serialize(): Unit = {
-    println(s"[$name]")
+  def serialize(): String = {
+    val sb = new StringBuilder()
+    println(sb, s"[$name]\n")
     // we put breakpoints as a list
     if (stmts.nonEmpty) {
       // fix the reset condition first
       fix_stmt_cond()
-      println("breakpoints = [")
+      sb ++ "breakpoints = [\n"
       stmts.foreach(s => {
-        println("[\"" + s.fn_info + "\", \"" + s.cond + "\"],")
+        println(sb, "[\"" + s.fn_info + "\", \"" + s.cond + "\"],")
       })
-      println("]")
+      println(sb, "]")
     }
 
-    println(s"[$name.instances]")
-    instances.foreach(i => println(i.inst_name + " = \"" + i.def_name + "\""))
+    println(sb, s"[$name.instances]")
+    instances.foreach(i => println(sb, i.inst_name + " = \"" + i.def_name + "\""))
 
-    println(s"[$name.variables]")
+    println(sb, s"[$name.variables]")
     ports.foreach(p => {
       val gen_var = get_var_names(p, ".")
       val rtl_var = get_var_names(p, "_")
       for (i <- gen_var.indices)
-        println("\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
+        println(sb, "\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
     })
 
     regs.foreach(r => {
       val gen_var = get_var_names(r, ".")
       val rtl_var = get_var_names(r, "_")
       for (i <- gen_var.indices)
-        println("\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
+        println(sb, "\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
     })
 
     wires.foreach(w => {
       val gen_var = get_var_names(w, ".")
       val rtl_var = get_var_names(w, "_")
       for (i <- gen_var.indices)
-        println("\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
+        println(sb, "\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
     })
+    sb.result()
   }
 
   private def exprToString(pred: Expression): String = {
@@ -231,9 +233,14 @@ class ModuleDef(var name: String) {
     }
   }
 
+  private def println(sb: mutable.StringBuilder, str: String) {
+    sb ++ str
+    sb ++ "\n"
+  }
+
 }
 
-class SymbolTable {
+class SymbolTable(filename: String) {
   private val module_defs = ListBuffer[ModuleDef]()
 
   def add_module(name: String) {
@@ -245,14 +252,26 @@ class SymbolTable {
   }
 
   def serialize(): Unit = {
-    module_defs.foreach(m => m.serialize())
+    if (filename.nonEmpty) {
+      val writer = new PrintWriter(new File(filename))
+      module_defs.foreach(m => {
+        val s = m.serialize()
+        writer.write(s)
+      }
+      )
+    } else {
+      module_defs.foreach(m => {
+        val s = m.serialize()
+        println(s)
+      }
+      )
+    }
   }
-
 }
 
-class AnalyzeSymbolTable {
+class AnalyzeSymbolTable(filename: String) {
   def execute(circuit: Circuit): Unit = {
-    val table = new SymbolTable()
+    val table = new SymbolTable(filename)
     circuit.foreachModule(visitModule(table))
 
     // serialize to stdout
@@ -320,7 +339,7 @@ class AnalyzeCircuit extends Transform with DependencyAPIMigration {
 
   def execute(state: CircuitState): CircuitState = {
     val circuit = state.circuit
-    val pass = new AnalyzeSymbolTable()
+    val pass = new AnalyzeSymbolTable("")
     pass.execute(circuit)
     state
   }
