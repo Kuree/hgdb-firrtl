@@ -12,3 +12,5 @@ project/plugins/project/
 project/project/
 project/metals.sbt
 
+# test vectors
+*.toml
