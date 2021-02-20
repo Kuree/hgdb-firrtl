@@ -181,12 +181,12 @@ class ModuleDef(var name: String) {
   // need to serialize to toml format that can be directly converted into
   def serialize(): String = {
     val sb = new StringBuilder()
-    println(sb, s"[$name]\n")
+    println(sb, s"[$name]")
     // we put breakpoints as a list
     if (stmts.nonEmpty) {
       // fix the reset condition first
       fix_stmt_cond()
-      sb ++ "breakpoints = [\n"
+      println(sb, "breakpoints = [")
       stmts.foreach(s => {
         println(sb, "[\"" + s.fn_info + "\", \"" + s.cond + "\"],")
       })
