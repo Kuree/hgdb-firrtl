@@ -1,0 +1,38 @@
+name: Test Firrtl to HGDB
+
+on: [push, pull_request]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Checkout submodules 🖥️
+      shell: bash
+      run: |
+        auth_header="$(git config --local --get http.https://github.com/.extraheader)"
+        git submodule sync --recursive
+        git -c "http.extraheader=$auth_header" -c protocol.version=2 submodule update --init --force --recursive --depth=1
+    - name: Build hgdb-firrtl ☕
+      shell: bash
+      run: |
+        sbt assembly
+    - name: Setup Python environment 🐍
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.7
+    - name: Install latest hgdb client 🐍
+      shell: bash
+      run: |
+        pip install hgdb[all] pytest
+    - name: Run tests ⚙️
+      shell: bash
+      run: |
+        # convert firrtl to toml
+        ./bin/firrtl2toml tests/ImplicitStateVendingMachine.fir tests/ImplicitStateVendingMachine.toml
+        # convert toml to hgdb
+        toml2hgdb tests/ImplicitStateVendingMachine.toml tests/ImplicitStateVendingMachine.db
+        pytest tests/
