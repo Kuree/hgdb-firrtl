@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+set -xe
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 input.fir output.toml" 
+    exit 1
+fi
+
+ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+java -cp hgdb-firrtl.jar hgdb.Driver $1 > $2
