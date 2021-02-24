@@ -9,4 +9,4 @@ fi
 
 ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-java -cp ${ROOT}/hgdb-firrtl.jar hgdb.Driver $1 > $2
+"${ROOT}"/firrtl -i "$1" -hgdb "$2"

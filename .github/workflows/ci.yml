@@ -16,10 +16,16 @@ jobs:
         auth_header="$(git config --local --get http.https://github.com/.extraheader)"
         git submodule sync --recursive
         git -c "http.extraheader=$auth_header" -c protocol.version=2 submodule update --init --force --recursive --depth=1
+    - name: Build latest Firrtl ☕
+      shell: bash
+      run: |
+        git clone --depth 1 https://github.com/chipsalliance/firrtl/ /tmp/firrtl
+        cd /tmp/firrtl
+        sbt assembly
     - name: Build hgdb-firrtl ☕
       shell: bash
       run: |
-        sbt assembly
+        ./bin/install /tmp/firrtl
     - name: Setup Python environment 🐍
       uses: actions/setup-python@v2
       with:
