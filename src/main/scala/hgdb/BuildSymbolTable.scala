@@ -3,7 +3,7 @@ package hgdb
 
 import firrtl.{CircuitState, Transform, _}
 import firrtl.annotations.{CircuitTarget, ModuleTarget, NoTargetAnnotation}
-import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefRegister, DefWire, Field, FileInfo, Info, Reference, SubField, SubIndex, Type, VectorType}
+import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefNode, DefRegister, DefWire, Field, FileInfo, Info, Reference, SubField, SubIndex, Type, VectorType}
 import firrtl.options.{RegisteredTransform, ShellOption}
 import firrtl.stage.{Forms, RunFirrtlTransformAnnotation}
 import firrtl.stage.TransformManager.TransformDependency
@@ -67,6 +67,10 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   def add_wire(w: DefWire): DontTouchAnnotation = {
     wires += w
     new DontTouchAnnotation(mTarget.ref(w.name))
+  }
+
+  def add_node(n: DefNode): DontTouchAnnotation = {
+    new DontTouchAnnotation(mTarget.ref(n.name))
   }
 
   def add_instance(def_name: String, inst_name: String): Unit = {
@@ -338,6 +342,9 @@ class AnalyzeSymbolTable(filename: String, main: String) {
         dontTouches += a
       case w: DefWire =>
         val a = table.current_module().add_wire(w)
+        dontTouches += a
+      case n: DefNode =>
+         val a = table.current_module().add_node(n)
         dontTouches += a
       case _ =>
     }
