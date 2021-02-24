@@ -1,5 +1,6 @@
 package hgdb
 
+import firrtl.AnnotationSeq
 import firrtl.Parser.UseInfo
 import firrtl.ir.Circuit
 import firrtl.options.Dependency
@@ -8,7 +9,7 @@ import firrtl.passes.Pass
 
 object DumpSymbolTable extends Pass {
   def run(c: Circuit): Circuit = {
-    val pass = new AnalyzeSymbolTable("")
+    val pass = new AnalyzeSymbolTable("", c.main)
     pass.execute(c)
     c
   }

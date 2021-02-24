@@ -1,13 +1,13 @@
 package hgdb
 
 
-import firrtl._
-import firrtl.annotations.{NoTargetAnnotation, SingleTargetAnnotation}
+import firrtl.{CircuitState, Transform, transforms, _}
+import firrtl.annotations.{CircuitTarget, ModuleTarget, NoTargetAnnotation}
 import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefRegister, DefWire, Field, FileInfo, Info, Reference, SubField, SubIndex, Type}
 import firrtl.options.{RegisteredTransform, ShellOption}
-import firrtl.{CircuitState, Transform}
 import firrtl.stage.{Forms, RunFirrtlTransformAnnotation}
 import firrtl.stage.TransformManager.TransformDependency
+import firrtl.transforms.DontTouchAnnotation
 
 import java.io.{File, PrintWriter}
 import scala.collection.mutable
@@ -45,7 +45,8 @@ case class StatementInfo(fn_info: String, cond: String, target: Expression)
 
 case class ModuleInstantiation(def_name: String, inst_name: String)
 
-class ModuleDef(var name: String) {
+class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
+  private val name = m.name
   private val ports = ListBuffer[Port]()
   private val regs = ListBuffer[DefRegister]()
   private val wires = ListBuffer[DefWire]()
@@ -53,16 +54,19 @@ class ModuleDef(var name: String) {
   private val condStack = new Stack()
   private var stmts = ListBuffer[StatementInfo]()
 
-  def add_port(port: Port): Unit = {
+  def add_port(port: Port): DontTouchAnnotation = {
     ports += port
+    new DontTouchAnnotation(mTarget.ref(port.name))
   }
 
-  def add_reg(r: DefRegister): Unit = {
+  def add_reg(r: DefRegister): DontTouchAnnotation = {
     regs += r
+    new DontTouchAnnotation(mTarget.ref(r.name))
   }
 
-  def add_wire(w: DefWire): Unit = {
+  def add_wire(w: DefWire): DontTouchAnnotation = {
     wires += w
+    new DontTouchAnnotation(mTarget.ref(w.name))
   }
 
   def add_instance(def_name: String, inst_name: String): Unit = {
@@ -183,41 +187,41 @@ class ModuleDef(var name: String) {
   // need to serialize to toml format that can be directly converted into
   def serialize(): String = {
     val sb = new StringBuilder()
-    println(sb, s"[$name]")
+    println_(sb, s"[$name]")
     // we put breakpoints as a list
     if (stmts.nonEmpty) {
       // fix the reset condition first
       fix_stmt_cond()
-      println(sb, "breakpoints = [")
+      println_(sb, "breakpoints = [")
       stmts.foreach(s => {
-        println(sb, "[\"" + s.fn_info + "\", \"" + s.cond + "\"],")
+        println_(sb, "[\"" + s.fn_info + "\", \"" + s.cond + "\"],")
       })
-      println(sb, "]")
+      println_(sb, "]")
     }
 
-    println(sb, s"[$name.instances]")
-    instances.foreach(i => println(sb, i.inst_name + " = \"" + i.def_name + "\""))
+    println_(sb, s"[$name.instances]")
+    instances.foreach(i => println_(sb, i.inst_name + " = \"" + i.def_name + "\""))
 
-    println(sb, s"[$name.variables]")
+    println_(sb, s"[$name.variables]")
     ports.foreach(p => {
       val gen_var = get_var_names(p, ".")
       val rtl_var = get_var_names(p, "_")
       for (i <- gen_var.indices)
-        println(sb, "\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
+        println_(sb, "\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
     })
 
     regs.foreach(r => {
       val gen_var = get_var_names(r, ".")
       val rtl_var = get_var_names(r, "_")
       for (i <- gen_var.indices)
-        println(sb, "\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
+        println_(sb, "\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
     })
 
     wires.foreach(w => {
       val gen_var = get_var_names(w, ".")
       val rtl_var = get_var_names(w, "_")
       for (i <- gen_var.indices)
-        println(sb, "\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
+        println_(sb, "\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
     })
     sb.result()
   }
@@ -235,7 +239,7 @@ class ModuleDef(var name: String) {
     }
   }
 
-  private def println(sb: mutable.StringBuilder, str: String): Unit = {
+  private def println_(sb: mutable.StringBuilder, str: String): Unit = {
     sb.append(str)
     sb.append("\n")
   }
@@ -245,8 +249,8 @@ class ModuleDef(var name: String) {
 class SymbolTable(filename: String) {
   private val module_defs = ListBuffer[ModuleDef]()
 
-  def add_module(name: String) {
-    module_defs += new ModuleDef(name)
+  def add_module(m: DefModule, mTarget: ModuleTarget) {
+    module_defs += new ModuleDef(m, mTarget)
   }
 
   def current_module(): ModuleDef = {
@@ -273,24 +277,30 @@ class SymbolTable(filename: String) {
   }
 }
 
-class AnalyzeSymbolTable(filename: String) {
-  def execute(circuit: Circuit): Unit = {
+class AnalyzeSymbolTable(filename: String, main: String) {
+  private val circuitTarget = CircuitTarget(main)
+  private var dontTouches = ListBuffer[DontTouchAnnotation]()
+
+  def execute(circuit: Circuit): Seq[DontTouchAnnotation] = {
     val table = new SymbolTable(filename)
     circuit.foreachModule(visitModule(table))
 
     // serialize to stdout
     table.serialize()
+    dontTouches
   }
 
   def visitModule(table: SymbolTable)(m: DefModule): Unit = {
     // Set ledger to current module name
-    table.add_module(m.name)
+    val mTarget = circuitTarget.module(m.name)
+    table.add_module(m, mTarget)
     m.foreachPort(visitPort(table))
     m.foreachStmt(visitStatement(table))
   }
 
   def visitPort(table: SymbolTable)(p: Port): Unit = {
-    table.current_module().add_port(p)
+    val a = table.current_module().add_port(p)
+    dontTouches += a
   }
 
   def visitStatement(table: SymbolTable)(s: Statement): Unit = {
@@ -320,9 +330,11 @@ class AnalyzeSymbolTable(filename: String) {
         b.stmts.foreach(s => visitStatement(table)(s))
       case reg: DefRegister =>
         // need to add it to the register list, which will be used to compute
-        table.current_module().add_reg(reg)
+        val a = table.current_module().add_reg(reg)
+        dontTouches += a
       case w: DefWire =>
-        table.current_module().add_wire(w)
+         val a = table.current_module().add_wire(w)
+        dontTouches += a
       case _ =>
     }
   }
@@ -343,7 +355,7 @@ case class HGDBPassAnnotation(filename: String) extends NoTargetAnnotation {
 
 object HGDBPassAnnotation {
   def parse(t: String): HGDBPassAnnotation = {
-    HGDBPassAnnotation(t);
+    HGDBPassAnnotation(t)
   }
 }
 
@@ -358,9 +370,10 @@ class AnalyzeCircuit extends Transform with DependencyAPIMigration with Register
       filename = annos.head.filename
     }
     val circuit = state.circuit
-    val pass = new AnalyzeSymbolTable(filename)
-    pass.execute(circuit)
-    state
+    val pass = new AnalyzeSymbolTable(filename, circuit.main)
+    val dontTouches = pass.execute(circuit)
+    val newAnnotations = state.annotations ++ dontTouches
+    CircuitState(state.circuit, state.form, newAnnotations, state.renames)
   }
 
   val options = Seq(
