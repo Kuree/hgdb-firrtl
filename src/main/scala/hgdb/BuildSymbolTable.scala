@@ -3,7 +3,7 @@ package hgdb
 
 import firrtl.{CircuitState, Transform, transforms, _}
 import firrtl.annotations.{CircuitTarget, ModuleTarget, NoTargetAnnotation}
-import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefRegister, DefWire, Field, FileInfo, Info, Reference, SubField, SubIndex, Type}
+import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefRegister, DefWire, Field, FileInfo, Info, Reference, SubField, SubIndex, Type, VectorType}
 import firrtl.options.{RegisteredTransform, ShellOption}
 import firrtl.stage.{Forms, RunFirrtlTransformAnnotation}
 import firrtl.stage.TransformManager.TransformDependency
@@ -136,7 +136,17 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
             result += var_name + concat_str + n
           })
         })
-
+      case v: VectorType =>
+        for (i <- 0 until v.size) {
+          val names = get_var_names_from_type(v.tpe, var_name, concat_str)
+          names.foreach(n => {
+            if (concat_str == ".") {
+              result += n + "[" + i.toString + "]"
+            } else {
+              result += n + concat_str + i.toString
+            }
+          })
+        }
       case _ => result += var_name
     }
     result
@@ -333,7 +343,7 @@ class AnalyzeSymbolTable(filename: String, main: String) {
         val a = table.current_module().add_reg(reg)
         dontTouches += a
       case w: DefWire =>
-         val a = table.current_module().add_wire(w)
+        val a = table.current_module().add_wire(w)
         dontTouches += a
       case _ =>
     }
