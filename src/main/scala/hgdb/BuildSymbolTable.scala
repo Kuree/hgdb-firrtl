@@ -1,7 +1,7 @@
 package hgdb
 
 
-import firrtl.{CircuitState, Transform, transforms, _}
+import firrtl.{CircuitState, Transform, _}
 import firrtl.annotations.{CircuitTarget, ModuleTarget, NoTargetAnnotation}
 import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefRegister, DefWire, Field, FileInfo, Info, Reference, SubField, SubIndex, Type, VectorType}
 import firrtl.options.{RegisteredTransform, ShellOption}
@@ -194,6 +194,15 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
     })
   }
 
+  def output_var[T](sb: StringBuilder, vars: ListBuffer[T]): Unit = {
+    vars.foreach(v => {
+      val gen_var = get_var_names(v, ".")
+      val rtl_var = get_var_names(v, "_")
+      for (i <- gen_var.indices)
+        println_(sb, "\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
+    })
+  }
+
   // need to serialize to toml format that can be directly converted into
   def serialize(): String = {
     val sb = new StringBuilder()
@@ -213,26 +222,11 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
     instances.foreach(i => println_(sb, i.inst_name + " = \"" + i.def_name + "\""))
 
     println_(sb, s"[$name.variables]")
-    ports.foreach(p => {
-      val gen_var = get_var_names(p, ".")
-      val rtl_var = get_var_names(p, "_")
-      for (i <- gen_var.indices)
-        println_(sb, "\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
-    })
 
-    regs.foreach(r => {
-      val gen_var = get_var_names(r, ".")
-      val rtl_var = get_var_names(r, "_")
-      for (i <- gen_var.indices)
-        println_(sb, "\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
-    })
+    output_var(sb, ports)
+    output_var(sb, regs)
+    output_var(sb, wires)
 
-    wires.foreach(w => {
-      val gen_var = get_var_names(w, ".")
-      val rtl_var = get_var_names(w, "_")
-      for (i <- gen_var.indices)
-        println_(sb, "\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
-    })
     sb.result()
   }
 
@@ -374,10 +368,10 @@ class AnalyzeCircuit extends Transform with DependencyAPIMigration with Register
   override def prerequisites: Seq[TransformDependency] = Forms.HighForm
 
   def execute(state: CircuitState): CircuitState = {
-    val annos = state.annotations.collect { case a: HGDBPassAnnotation => a }
+    val annotations = state.annotations.collect { case a: HGDBPassAnnotation => a }
     var filename: String = ""
-    if (annos.nonEmpty) {
-      filename = annos.head.filename
+    if (annotations.nonEmpty) {
+      filename = annotations.head.filename
     }
     val circuit = state.circuit
     val pass = new AnalyzeSymbolTable(filename, circuit.main)
