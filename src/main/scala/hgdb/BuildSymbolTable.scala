@@ -2,12 +2,14 @@ package hgdb
 
 
 import firrtl._
+import firrtl.annotations.{NoTargetAnnotation, SingleTargetAnnotation}
 import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefRegister, DefWire, Field, FileInfo, Info, Reference, SubField, SubIndex, Type}
+import firrtl.options.{RegisteredTransform, ShellOption}
 import firrtl.{CircuitState, Transform}
-import firrtl.stage.Forms
+import firrtl.stage.{Forms, RunFirrtlTransformAnnotation}
 import firrtl.stage.TransformManager.TransformDependency
 
-import java.io.{PrintWriter, File}
+import java.io.{File, PrintWriter}
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 // Firrtl IR classes
@@ -259,6 +261,8 @@ class SymbolTable(filename: String) {
         writer.write(s)
       }
       )
+      writer.flush()
+      writer.close()
     } else {
       module_defs.foreach(m => {
         val s = m.serialize()
@@ -333,14 +337,40 @@ class AnalyzeSymbolTable(filename: String) {
   }
 }
 
-class AnalyzeCircuit extends Transform with DependencyAPIMigration {
+// options
+case class HGDBPassAnnotation(filename: String) extends NoTargetAnnotation {
+}
+
+object HGDBPassAnnotation {
+  def parse(t: String): HGDBPassAnnotation = {
+    HGDBPassAnnotation(t);
+  }
+}
+
+class AnalyzeCircuit extends Transform with DependencyAPIMigration with RegisteredTransform {
   // see https://gist.github.com/seldridge/0959d714fba6857c5f71ebc7c9044fcf
   override def prerequisites: Seq[TransformDependency] = Forms.HighForm
 
   def execute(state: CircuitState): CircuitState = {
+    val annos = state.annotations.collect { case a: HGDBPassAnnotation => a }
+    var filename: String = ""
+    if (annos.nonEmpty) {
+      filename = annos.head.filename
+    }
     val circuit = state.circuit
-    val pass = new AnalyzeSymbolTable("")
+    val pass = new AnalyzeSymbolTable(filename)
     pass.execute(circuit)
     state
   }
+
+  val options = Seq(
+    new ShellOption[String](
+      longOption = "--hgdb-toml",
+      toAnnotationSeq = (a: String) =>
+        Seq(HGDBPassAnnotation.parse(a), RunFirrtlTransformAnnotation(new AnalyzeCircuit)),
+      helpText = "HGDB Toml output file",
+      shortOption = Some("hgdb"),
+      helpValueName = Some("filename.toml")
+    )
+  )
 }
