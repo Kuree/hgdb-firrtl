@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+set -e
+
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 firrtl_dir"
+    exit 1
+fi
+
+# need to figure out if we have the firrtl jar
+FIRRTL_DIR=$1
+CURRENT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+FIRRTL_JAR="${FIRRTL_DIR}/utils/bin/firrtl.jar"
+
+if [ ! -f "${FIRRTL_JAR}" ]; then
+    echo "Unable to find ${FIRRTL_JAR}"
+    exit 1
+fi
+
+# need to make sure our own jar exists as well
+HGDB_JAR="${CURRENT_DIR}/hgdb-firrtl.jar"
+# shellcheck disable=SC2086
+if [ ! -f ${HGDB_JAR} ]; then
+    sbt assembly
+fi
+
+# okay now we need to dump the new firrtl command
+FILE="${CURRENT_DIR}/firrtl"
+# shellcheck disable=SC2086
+echo "#!/usr/bin/env bash" > ${FILE}
+echo "java -cp \"${FIRRTL_JAR}:${HGDB_JAR}\" firrtl.stage.FirrtlMain \
+    --custom-transforms hgdb.AnalyzeCircuit \${@:1}" >> ${FILE}
+chmod +x "${FILE}"
