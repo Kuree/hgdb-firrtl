@@ -6,15 +6,18 @@ Firrtl file and converts it into a hgdb supported format. Notice that this pass
 *does not* change your Firrtl design.
 
 # Usage
-First we need to build the driver
+First we need to build the `jar` file so that `firrtl` can recognize our custom pass
 ```
-$ sbt assembly
+$ ./bin/install [firrtl_path]
 ```
+where `[firrtl_path]` is where `Firrtl` folder is. It assumes that you have build the
+Firrtl using `sbt assembly` command. The `install` file will generate a new `firrtl`
+file in the `./bin` folder that has proper java class path set.
 
 Then we need to convert your Firrtl file into a hgdb symbol table:
 
 ```
-$ ./bin/firrtl2toml <your_firrtl_file> <toml_output>
+$ ./bin/firrtl <your_firrtl_file> -hgdb <toml_output>
 $ pip install hgdb[all] # if you haven't done that already
 $ toml2hgdb <toml_output> debug.db
 ```
