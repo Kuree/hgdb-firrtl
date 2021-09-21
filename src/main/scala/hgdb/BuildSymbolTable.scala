@@ -287,7 +287,7 @@ class SymbolTable(filename: String) {
 
 class AnalyzeSymbolTable(filename: String, main: String) {
   private val circuitTarget = CircuitTarget(main)
-  private var dontTouches = ListBuffer[DontTouchAnnotation]()
+  private val dontTouches = ListBuffer[DontTouchAnnotation]()
 
   def execute(circuit: Circuit): Seq[DontTouchAnnotation] = {
     val table = new SymbolTable(filename)

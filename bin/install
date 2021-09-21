@@ -3,7 +3,7 @@
 set -e
 
 if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 firrtl_dir"
+    echo "Usage: $0 firrtl_dir/main.jar"
     exit 1
 fi
 
@@ -11,9 +11,20 @@ fi
 FIRRTL_DIR=$1
 CURRENT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-FIRRTL_JAR="${FIRRTL_DIR}/utils/bin/firrtl.jar"
+# if it's a jar file
+FILE_INFO="$(file "${FIRRTL_DIR}")"
+JAR_NAME="JAR"
+FIRRTL_JAR=""
+if [[ "${FILE_INFO}" == *"${JAR_NAME}"* ]]; then
+    FIRRTL_JAR=${FIRRTL_DIR}
+else
+  FIRRTL_JAR="${FIRRTL_DIR}/utils/bin/firrtl.jar"
+fi
 
-if [ ! -f "${FIRRTL_JAR}" ]; then
+# use the full path
+FIRRTL_JAR="$(realpath "${FIRRTL_JAR}")"
+
+if [[ ! -f "${FIRRTL_JAR}" ]]; then
     echo "Unable to find ${FIRRTL_JAR}"
     exit 1
 fi
