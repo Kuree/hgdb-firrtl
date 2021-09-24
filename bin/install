@@ -30,11 +30,8 @@ if [[ ! -f "${FIRRTL_JAR}" ]]; then
 fi
 
 # need to make sure our own jar exists as well
-HGDB_JAR="${CURRENT_DIR}/hgdb-firrtl.jar"
-# shellcheck disable=SC2086
-if [ ! -f ${HGDB_JAR} ]; then
-    sbt assembly
-fi
+# use make to build it
+make
 
 # okay now we need to dump the new firrtl command
 FILE="${CURRENT_DIR}/firrtl"
