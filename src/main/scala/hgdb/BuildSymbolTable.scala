@@ -174,9 +174,8 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   private def get_field_names(field: Field, concat_str: String): ListBuffer[String] = {
     field.tpe match {
       case b: BundleType =>
-        val names = get_bundle_names(b)
+        val names = get_bundle_names(b, concat_str)
         names.map(s => field.name + concat_str + s)
-        names
       case _ =>
         var result = ListBuffer[String]()
         result += field.name
@@ -257,7 +256,7 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
 class SymbolTable(filename: String) {
   private val module_defs = ListBuffer[ModuleDef]()
 
-  def add_module(m: DefModule, mTarget: ModuleTarget) {
+  def add_module(m: DefModule, mTarget: ModuleTarget): Unit = {
     module_defs += new ModuleDef(m, mTarget)
   }
 

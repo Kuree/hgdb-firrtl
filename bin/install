@@ -31,7 +31,8 @@ fi
 
 # need to make sure our own jar exists as well
 # use make to build it
-make
+make -C ${CURRENT_DIR}
+HGDB_JAR=${CURRENT_DIR}/hgdb-firrtl.jar
 
 # okay now we need to dump the new firrtl command
 FILE="${CURRENT_DIR}/firrtl"
