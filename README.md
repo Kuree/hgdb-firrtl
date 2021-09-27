@@ -44,6 +44,6 @@ Below are a list of limitations:
    Ideally Firrtl should provide `-O0` switch when compile to RTL that disable all the optimization passes.
 
 
-# What to learn more about hgdb?
+# Want to learn more about hgdb?
 hgdb is designed to be a flexible debugging framework for hardware generators that supports any mainstream
 RTL simulators. You can check out the technical details [here](https://github.com/Kuree/hgdb/tree/master/docs).
