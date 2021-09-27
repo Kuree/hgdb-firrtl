@@ -130,8 +130,23 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
     result
   }
 
-  private def get_var_names_from_type(t: Type, var_name: String, concat_str: String): ListBuffer[String] = {
+  private def get_vector_names(v: VectorType, var_name: String, concat_str: String = "_"): ListBuffer[String] = {
     var result = new ListBuffer[String]()
+    for (i <- 0 until v.size) {
+      val names = get_var_names_from_type(v.tpe, var_name, concat_str)
+      names.foreach(n => {
+        if (concat_str == ".") {
+          result += n + "[" + i.toString + "]"
+        } else {
+          result += n + concat_str + i.toString
+        }
+      })
+    }
+    result
+  }
+
+  private def get_var_names_from_type(t: Type, var_name: String, concat_str: String): ListBuffer[String] = {
+    val result = new ListBuffer[String]()
     t match {
       case b: BundleType =>
         b.fields.foreach(f => {
@@ -141,16 +156,7 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
           })
         })
       case v: VectorType =>
-        for (i <- 0 until v.size) {
-          val names = get_var_names_from_type(v.tpe, var_name, concat_str)
-          names.foreach(n => {
-            if (concat_str == ".") {
-              result += n + "[" + i.toString + "]"
-            } else {
-              result += n + concat_str + i.toString
-            }
-          })
-        }
+        get_vector_names(v, var_name, concat_str)
       case _ => result += var_name
     }
     result
@@ -176,8 +182,10 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
       case b: BundleType =>
         val names = get_bundle_names(b, concat_str)
         names.map(s => field.name + concat_str + s)
+      case v: VectorType =>
+        get_vector_names(v, field.name, concat_str)
       case _ =>
-        var result = ListBuffer[String]()
+        val result = ListBuffer[String]()
         result += field.name
         result
     }
@@ -343,7 +351,7 @@ class AnalyzeSymbolTable(filename: String, main: String) {
         val a = table.current_module().add_wire(w)
         dontTouches += a
       case n: DefNode =>
-         val a = table.current_module().add_node(n)
+        val a = table.current_module().add_node(n)
         dontTouches += a
       case _ =>
     }
