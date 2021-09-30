@@ -41,7 +41,20 @@ class Stack {
   }
 }
 
-case class StatementInfo(fn_info: String, cond: String, target: Expression)
+object Util {
+  def getInfo(info: Info): String = {
+    info match {
+      case f: FileInfo =>
+        f.unescaped
+      case _ =>
+        ""
+    }
+  }
+}
+
+case class StatementInfo(fn_info: String, cond: String, target: Expression) extends Ordered[StatementInfo] {
+  def compare(other: StatementInfo): Int = this.fn_info compare other.fn_info
+}
 
 case class ModuleInstantiation(def_name: String, inst_name: String)
 
@@ -50,9 +63,10 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   private val ports = ListBuffer[Port]()
   private val regs = ListBuffer[DefRegister]()
   private val wires = ListBuffer[DefWire]()
+  private val nodes = ListBuffer[DefNode]()
   private val instances = ListBuffer[ModuleInstantiation]()
   private val condStack = new Stack()
-  private var stmts = ListBuffer[StatementInfo]()
+  private var stmts = mutable.SortedSet[StatementInfo]()
 
   def add_port(port: Port): DontTouchAnnotation = {
     ports += port
@@ -70,6 +84,12 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   }
 
   def add_node(n: DefNode): DontTouchAnnotation = {
+    if (n.name(0) != '_') {
+      nodes += n
+      // this is also an statement
+      val fn = Util.getInfo(n.info)
+      stmts += StatementInfo(fn, "1", n.value)
+    }
     new DontTouchAnnotation(mTarget.ref(n.name))
   }
 
@@ -192,9 +212,9 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   }
 
   // need to fix reset stuff
-  def fix_stmt_cond(): Unit = {
+  def fix_stmt_cond() = {
     val reset_map = build_reset_map()
-    stmts = stmts.map(stmt => {
+    val maps = stmts.map(stmt => {
       val target_expr = exprToString(stmt.target)
       if (reset_map.contains(target_expr)) {
         val s = StatementInfo(stmt.fn_info, reset_map(target_expr) + " && " + stmt.cond, null)
@@ -203,6 +223,7 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
         stmt
       }
     })
+    stmts = mutable.SortedSet[StatementInfo]() ++ maps
   }
 
   def output_var[T](sb: StringBuilder, vars: ListBuffer[T]): Unit = {
@@ -211,6 +232,16 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
       val rtl_var = get_var_names(v, "_")
       for (i <- gen_var.indices)
         println_(sb, "\"" + gen_var(i) + "\" = \"" + rtl_var(i) + "\"")
+    })
+  }
+
+  def output_node(sb: StringBuilder, vars: ListBuffer[DefNode]): Unit = {
+    vars.foreach(n => {
+      val name = n.name
+      // we assume it's already flattened since it doesn't hold any expression for the target
+      // the type is always UnknownType
+      val fn = Util.getInfo(n.info)
+      println_(sb, "\"" + name + "\" = [\"" + name + "\", \"" + fn + "\"]")
     })
   }
 
@@ -237,6 +268,14 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
     output_var(sb, ports)
     output_var(sb, regs)
     output_var(sb, wires)
+    // nodes are actually local, so we need to generate based on the breakpoint
+    // ids
+    if (nodes.nonEmpty) {
+      println_(sb, s"[$name.locals]")
+      output_node(sb, nodes)
+    }
+
+    // node are typically local
 
     sb.result()
   }
@@ -323,7 +362,7 @@ class AnalyzeSymbolTable(filename: String, main: String) {
       case d: DefInstance =>
         table.current_module().add_instance(d.module, d.name)
       case Conditionally(info, pred, conseq, alt) =>
-        val fn = getInfo(info)
+        val fn = Util.getInfo(info)
         // that particular if statement
         if (fn.nonEmpty) {
           table.current_module().add_stmt(fn, null)
@@ -336,7 +375,7 @@ class AnalyzeSymbolTable(filename: String, main: String) {
         visitStatement(table)(alt)
         table.current_module().pop_pred()
       case c: Connect =>
-        val fn = getInfo(c.info)
+        val fn = Util.getInfo(c.info)
         if (fn.nonEmpty) {
           // add to statement
           table.current_module().add_stmt(fn, c.loc)
@@ -354,15 +393,6 @@ class AnalyzeSymbolTable(filename: String, main: String) {
         val a = table.current_module().add_node(n)
         dontTouches += a
       case _ =>
-    }
-  }
-
-  def getInfo(info: Info): String = {
-    info match {
-      case f: FileInfo =>
-        f.unescaped
-      case _ =>
-        ""
     }
   }
 }
