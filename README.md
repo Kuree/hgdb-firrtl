@@ -8,11 +8,12 @@ Firrtl file and converts it into a hgdb supported format. Notice that this pass
 # Usage
 First we need to build the `jar` file so that `firrtl` can recognize our custom pass
 ```
-$ ./bin/install [firrtl_path]
+$ ./bin/install [firrtl_path/design.jar]
 ```
 where `[firrtl_path]` is where `Firrtl` folder is. It assumes that you have build the
 Firrtl using `sbt assembly` command. The `install` file will generate a new `firrtl`
 file in the `./bin` folder that has proper java class path set.
+You can also provide a jar file, which will be recognized by the install script.
 
 Then we need to convert your Firrtl file into a hgdb symbol table:
 
@@ -31,7 +32,8 @@ You can use any supported debugger hosted [here](https://github.com/Kuree/hgdb-d
 
 # How does it work?
 This pass analyzes the assignment and conditional (if) statements and uses Firrtl embedded `FileInfo` to
-create the symbol table. Explicitly named signals will be converted into `Generator Variables`.
+create the symbol table. Explicitly named signals will be converted into `Generator Variables` and nodes
+will be converted into `Context Variables`
 
 Below are a list of limitations:
 1. Because Firrtl doesn't track symbol changes, we have to make some assumptions on how high-level
@@ -40,7 +42,8 @@ Below are a list of limitations:
    be any "local" variables shown when you debug.
 3. Because the pass has to work on the IR before the mux pulling pass, it can only operates on high-form IR.
    Therefore, if there is any downstream optimization that removes the symbol,
-   you'll see undefined symbols when you debug.
+   you'll see undefined symbols when you debug. For instance, you need to disable FIRRTL inline pass to make
+   it work.
    Ideally Firrtl should provide `-O0` switch when compile to RTL that disable all the optimization passes.
 
 
