@@ -2,9 +2,9 @@ package hgdb
 
 
 import firrtl.{CircuitState, Transform, _}
-import firrtl.annotations.{CircuitTarget, ModuleTarget, NoTargetAnnotation}
+import firrtl.annotations.{Annotation, CircuitTarget, ModuleTarget, NoTargetAnnotation, ReferenceTarget, SingleTargetAnnotation}
 import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefNode, DefRegister, DefWire, Field, FileInfo, Info, Reference, SubField, SubIndex, Type, VectorType}
-import firrtl.options.{RegisteredTransform, ShellOption}
+import firrtl.options.{Dependency, RegisteredTransform, ShellOption}
 import firrtl.stage.{Forms, RunFirrtlTransformAnnotation}
 import firrtl.stage.TransformManager.TransformDependency
 import firrtl.transforms.DontTouchAnnotation
@@ -71,6 +71,15 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   def add_port(port: Port): DontTouchAnnotation = {
     ports += port
     new DontTouchAnnotation(mTarget.ref(port.name))
+  }
+
+  def anno_port(port: Port): SourceNameAnnotation = {
+    val names = get_var_names(port, ".")
+    if (names.nonEmpty)  {
+      SourceNameAnnotation(names.head, mTarget.ref(port.name))
+    } else {
+      SourceNameAnnotation("", mTarget.ref(port.name))
+    }
   }
 
   def add_reg(r: DefRegister): DontTouchAnnotation = {
@@ -334,6 +343,7 @@ class SymbolTable(filename: String) {
 class AnalyzeSymbolTable(filename: String, main: String) {
   private val circuitTarget = CircuitTarget(main)
   private val dontTouches = ListBuffer[DontTouchAnnotation]()
+  val sourceNames: ListBuffer[SourceNameAnnotation] = ListBuffer[SourceNameAnnotation]()
 
   def execute(circuit: Circuit): Seq[DontTouchAnnotation] = {
     val table = new SymbolTable(filename)
@@ -355,6 +365,7 @@ class AnalyzeSymbolTable(filename: String, main: String) {
   def visitPort(table: SymbolTable)(p: Port): Unit = {
     val a = table.current_module().add_port(p)
     dontTouches += a
+    sourceNames += table.current_module().anno_port(p)
   }
 
   def visitStatement(table: SymbolTable)(s: Statement): Unit = {
@@ -398,13 +409,19 @@ class AnalyzeSymbolTable(filename: String, main: String) {
 }
 
 // options
-case class HGDBPassAnnotation(filename: String) extends NoTargetAnnotation {
+case class HGDBPassAnnotationOption(filename: String) extends NoTargetAnnotation {
 }
 
-object HGDBPassAnnotation {
-  def parse(t: String): HGDBPassAnnotation = {
-    HGDBPassAnnotation(t)
+object HGDBPassAnnotationOption {
+  def parse(t: String): HGDBPassAnnotationOption = {
+    HGDBPassAnnotationOption(t)
   }
+}
+
+case class SourceNameAnnotation(name: String, target: ReferenceTarget)
+  extends SingleTargetAnnotation[ReferenceTarget] {
+  def targets = Seq(target)
+  def duplicate(n: ReferenceTarget): SourceNameAnnotation = this.copy(name, target)
 }
 
 class AnalyzeCircuit extends Transform with DependencyAPIMigration with RegisteredTransform {
@@ -412,7 +429,7 @@ class AnalyzeCircuit extends Transform with DependencyAPIMigration with Register
   override def prerequisites: Seq[TransformDependency] = Forms.HighForm
 
   def execute(state: CircuitState): CircuitState = {
-    val annotations = state.annotations.collect { case a: HGDBPassAnnotation => a }
+    val annotations = state.annotations.collect { case a: HGDBPassAnnotationOption => a }
     var filename: String = ""
     if (annotations.nonEmpty) {
       filename = annotations.head.filename
@@ -420,7 +437,7 @@ class AnalyzeCircuit extends Transform with DependencyAPIMigration with Register
     val circuit = state.circuit
     val pass = new AnalyzeSymbolTable(filename, circuit.main)
     val dontTouches = pass.execute(circuit)
-    val newAnnotations = state.annotations ++ dontTouches
+    val newAnnotations = state.annotations ++ pass.sourceNames
     CircuitState(state.circuit, state.form, newAnnotations, state.renames)
   }
 
@@ -428,10 +445,48 @@ class AnalyzeCircuit extends Transform with DependencyAPIMigration with Register
     new ShellOption[String](
       longOption = "--hgdb-toml",
       toAnnotationSeq = (a: String) =>
-        Seq(HGDBPassAnnotation.parse(a), RunFirrtlTransformAnnotation(new AnalyzeCircuit)),
+        Seq(HGDBPassAnnotationOption.parse(a), RunFirrtlTransformAnnotation(new AnalyzeCircuit)),
       helpText = "HGDB Toml output file",
       shortOption = Some("hgdb"),
       helpValueName = Some("filename.toml")
+    )
+  )
+}
+
+class CollectSourceNames(filename: String) {
+  val sourceNames: ListBuffer[SourceNameAnnotation] = ListBuffer[SourceNameAnnotation]()
+
+  def execute(annotations: Seq[Annotation]) = {
+    val sourceNames = annotations.filter {
+      case s: SourceNameAnnotation => true;
+      case _ => false
+    }
+    println(sourceNames.size)
+  }
+
+  def visitModule()(m: DefModule): Unit = {
+    // Set ledger to current module name
+    m.foreachPort(visitPort())
+  }
+
+  def visitPort()(p: Port): Unit = {
+  }
+}
+
+class CollectSourceNamesTransform extends Transform with DependencyAPIMigration with RegisteredTransform {
+  override def prerequisites: Seq[TransformDependency] = Forms.LowFormOptimized
+  def execute(state: CircuitState): CircuitState = {
+    val p = new CollectSourceNames("");
+    p.execute(state.annotations)
+    state;
+  }
+
+  val options = Seq(
+    new ShellOption[String](
+      longOption = "-g",
+      toAnnotationSeq = (a: String) =>
+        Seq(HGDBPassAnnotationOption.parse(a), RunFirrtlTransformAnnotation(new CollectSourceNamesTransform)),
+      helpText = "Enable debugging symbol",
     )
   )
 }
