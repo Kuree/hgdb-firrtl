@@ -74,12 +74,7 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   }
 
   def anno_port(port: Port): SourceNameAnnotation = {
-    val names = get_var_names(port, ".")
-    if (names.nonEmpty)  {
-      SourceNameAnnotation(names.head, mTarget.ref(port.name))
-    } else {
-      SourceNameAnnotation("", mTarget.ref(port.name))
-    }
+    SourceNameAnnotation(mTarget.ref(port.name))
   }
 
   def add_reg(r: DefRegister): DontTouchAnnotation = {
@@ -87,9 +82,17 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
     new DontTouchAnnotation(mTarget.ref(r.name))
   }
 
+  def anno_reg(r: DefRegister): SourceNameAnnotation = {
+    SourceNameAnnotation(mTarget.ref(r.name))
+  }
+
   def add_wire(w: DefWire): DontTouchAnnotation = {
     wires += w
     new DontTouchAnnotation(mTarget.ref(w.name))
+  }
+
+  def anno_wire(w: DefWire): SourceNameAnnotation = {
+    SourceNameAnnotation(mTarget.ref(w.name))
   }
 
   def add_node(n: DefNode): DontTouchAnnotation = {
@@ -102,8 +105,16 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
     new DontTouchAnnotation(mTarget.ref(n.name))
   }
 
+  def anno_node(n: DefNode): SourceNameAnnotation = {
+    SourceNameAnnotation(mTarget.ref(n.name))
+  }
+
   def add_instance(def_name: String, inst_name: String): Unit = {
     instances += ModuleInstantiation(def_name, inst_name)
+  }
+
+  def anno_instance(inst: DefInstance): SourceNameAnnotation = {
+    SourceNameAnnotation(mTarget.ref(inst.name))
   }
 
   def add_pred(pred: Expression): Unit = {
@@ -160,7 +171,7 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   }
 
   private def get_vector_names(v: VectorType, var_name: String, concat_str: String = "_"): ListBuffer[String] = {
-    var result = new ListBuffer[String]()
+    val result = new ListBuffer[String]()
     for (i <- 0 until v.size) {
       val names = get_var_names_from_type(v.tpe, var_name, concat_str)
       names.foreach(n => {
@@ -221,7 +232,7 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   }
 
   // need to fix reset stuff
-  def fix_stmt_cond() = {
+  def fix_stmt_cond(): Unit = {
     val reset_map = build_reset_map()
     val maps = stmts.map(stmt => {
       val target_expr = exprToString(stmt.target)
@@ -254,8 +265,37 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
     })
   }
 
+  def getCurrentModule(refTargets: Seq[ReferenceTarget]): Seq[ReferenceTarget] = {
+    refTargets.filter(r => {
+      r.module == name
+    })
+  }
+
+  def getValidRefs[A](refTargets: Seq[ReferenceTarget], list: ListBuffer[A]): ListBuffer[A] = {
+    list.filter(i => {
+      val r = refTargets.filter(r => {
+        i match {
+          case m: ModuleInstantiation =>
+            r.ref == m.inst_name
+          case p: Port =>
+            r.ref == p.name
+          case w: DefWire =>
+            r.ref == w.name
+          case reg: DefRegister =>
+            r.ref == reg.name
+          case n: DefNode =>
+            r.ref == n.name
+          case _ => false
+        }
+      })
+      r.nonEmpty
+    })
+
+  }
+
   // need to serialize to toml format that can be directly converted into
-  def serialize(): String = {
+  // ref targets is used to filter out any removed variables
+  def serialize(refTargets: Seq[ReferenceTarget]): String = {
     val sb = new StringBuilder()
     println_(sb, s"[$name]")
     // we put breakpoints as a list
@@ -269,19 +309,28 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
       println_(sb, "]")
     }
 
+    val currentRefs = getCurrentModule(refTargets)
+
     println_(sb, s"[$name.instances]")
-    instances.foreach(i => println_(sb, i.inst_name + " = \"" + i.def_name + "\""))
+    val valid_instances = getValidRefs(currentRefs, instances)
+    valid_instances.foreach(i => println_(sb, i.inst_name + " = \"" + i.def_name + "\""))
 
     println_(sb, s"[$name.variables]")
 
-    output_var(sb, ports)
-    output_var(sb, regs)
-    output_var(sb, wires)
+    val valid_ports = getValidRefs(currentRefs, ports)
+    output_var(sb, valid_ports)
+
+    val valid_regs = getValidRefs(currentRefs, regs)
+    output_var(sb, valid_regs)
+
+    val valid_wires = getValidRefs(currentRefs, wires)
+    output_var(sb, valid_wires)
     // nodes are actually local, so we need to generate based on the breakpoint
     // ids
-    if (nodes.nonEmpty) {
+    val valid_nodes = getValidRefs(currentRefs, nodes)
+    if (valid_nodes.nonEmpty) {
       println_(sb, s"[$name.locals]")
-      output_node(sb, nodes)
+      output_node(sb, valid_nodes)
     }
 
     // node are typically local
@@ -320,11 +369,11 @@ class SymbolTable(filename: String) {
     module_defs.last
   }
 
-  def serialize(): Unit = {
+  def serialize(refs: Seq[ReferenceTarget]): Unit = {
     if (filename.nonEmpty) {
       val writer = new PrintWriter(new File(filename))
       module_defs.foreach(m => {
-        val s = m.serialize()
+        val s = m.serialize(refs)
         writer.write(s)
       }
       )
@@ -332,7 +381,7 @@ class SymbolTable(filename: String) {
       writer.close()
     } else {
       module_defs.foreach(m => {
-        val s = m.serialize()
+        val s = m.serialize(refs)
         println(s)
       }
       )
@@ -344,13 +393,10 @@ class AnalyzeSymbolTable(filename: String, main: String) {
   private val circuitTarget = CircuitTarget(main)
   private val dontTouches = ListBuffer[DontTouchAnnotation]()
   val sourceNames: ListBuffer[SourceNameAnnotation] = ListBuffer[SourceNameAnnotation]()
+  val table = new SymbolTable(filename)
 
   def execute(circuit: Circuit): Seq[DontTouchAnnotation] = {
-    val table = new SymbolTable(filename)
     circuit.foreachModule(visitModule(table))
-
-    // serialize to stdout
-    table.serialize()
     dontTouches
   }
 
@@ -372,6 +418,7 @@ class AnalyzeSymbolTable(filename: String, main: String) {
     s.foreachStmt {
       case d: DefInstance =>
         table.current_module().add_instance(d.module, d.name)
+        sourceNames += table.current_module().anno_instance(d)
       case Conditionally(info, pred, conseq, alt) =>
         val fn = Util.getInfo(info)
         // that particular if statement
@@ -397,95 +444,134 @@ class AnalyzeSymbolTable(filename: String, main: String) {
         // need to add it to the register list, which will be used to compute
         val a = table.current_module().add_reg(reg)
         dontTouches += a
+        sourceNames += table.current_module().anno_reg(reg)
       case w: DefWire =>
         val a = table.current_module().add_wire(w)
         dontTouches += a
+        sourceNames += table.current_module().anno_wire(w)
       case n: DefNode =>
         val a = table.current_module().add_node(n)
         dontTouches += a
+        sourceNames += table.current_module().anno_node(n)
       case _ =>
     }
   }
 }
 
 // options
-case class HGDBPassAnnotationOption(filename: String) extends NoTargetAnnotation {
+case class HGDBPassAnnotationFilenameOption(filename: String) extends NoTargetAnnotation {
 }
 
-object HGDBPassAnnotationOption {
-  def parse(t: String): HGDBPassAnnotationOption = {
-    HGDBPassAnnotationOption(t)
+object HGDBPassAnnotationFilenameOption {
+  def parse(t: String): HGDBPassAnnotationFilenameOption = {
+    HGDBPassAnnotationFilenameOption(t)
   }
 }
 
-case class SourceNameAnnotation(name: String, target: ReferenceTarget)
+case class HGDBPassOptimizationOption(on: Boolean) extends NoTargetAnnotation {
+
+}
+
+object HGDBPassOptimizationOption {
+  def parse(t: String): HGDBPassOptimizationOption = {
+    HGDBPassOptimizationOption(t == "1")
+  }
+}
+
+case class SourceNameAnnotation(target: ReferenceTarget)
   extends SingleTargetAnnotation[ReferenceTarget] {
   def targets = Seq(target)
-  def duplicate(n: ReferenceTarget): SourceNameAnnotation = this.copy(name, target)
+
+  def duplicate(n: ReferenceTarget): SourceNameAnnotation = this.copy(target)
+}
+
+// wrapper annotation to the symbol table class
+case class HGDBSymbolTableAnnotation(table: SymbolTable) extends NoTargetAnnotation {
+
 }
 
 class AnalyzeCircuit extends Transform with DependencyAPIMigration with RegisteredTransform {
   // see https://gist.github.com/seldridge/0959d714fba6857c5f71ebc7c9044fcf
   override def prerequisites: Seq[TransformDependency] = Forms.HighForm
 
+  override def invalidates(xform: Transform): Boolean = false
+
   def execute(state: CircuitState): CircuitState = {
-    val annotations = state.annotations.collect { case a: HGDBPassAnnotationOption => a }
     var filename: String = ""
-    if (annotations.nonEmpty) {
-      filename = annotations.head.filename
+    val filename_annotation = state.annotations.collect { case a: HGDBPassAnnotationFilenameOption => a }
+    if (filename_annotation.nonEmpty) {
+      filename = filename_annotation.head.filename
     }
+
+    val debug_annotation = state.annotations.collect { case a: HGDBPassOptimizationOption => a }
+    var debugMode = true
+    if (debug_annotation.nonEmpty) {
+      debugMode = debug_annotation.head.on
+    }
+
     val circuit = state.circuit
     val pass = new AnalyzeSymbolTable(filename, circuit.main)
     val dontTouches = pass.execute(circuit)
-    val newAnnotations = state.annotations ++ pass.sourceNames
+    var newAnnotations = state.annotations ++ pass.sourceNames ++ Seq(HGDBSymbolTableAnnotation(pass.table))
+    // only add don't touch in debug mode
+    if (debugMode) {
+      newAnnotations = newAnnotations ++ dontTouches
+    }
     CircuitState(state.circuit, state.form, newAnnotations, state.renames)
   }
 
   val options = Seq(
     new ShellOption[String](
-      longOption = "--hgdb-toml",
+      longOption = "hgdb-toml",
       toAnnotationSeq = (a: String) =>
-        Seq(HGDBPassAnnotationOption.parse(a), RunFirrtlTransformAnnotation(new AnalyzeCircuit)),
+        Seq(HGDBPassAnnotationFilenameOption.parse(a), RunFirrtlTransformAnnotation(new AnalyzeCircuit)),
       helpText = "HGDB Toml output file",
-      shortOption = Some("hgdb"),
       helpValueName = Some("filename.toml")
+    ),
+    new ShellOption[String](
+      shortOption = Some("O"),
+      helpValueName = Some("Level"),
+      helpText = "Optimization level. 0 for debug build",
+      toAnnotationSeq = (a: String) =>
+        Seq(HGDBPassOptimizationOption.parse(a), RunFirrtlTransformAnnotation(new AnalyzeCircuit)),
+      longOption = "optimization"
     )
   )
 }
 
-class CollectSourceNames(filename: String) {
-  val sourceNames: ListBuffer[SourceNameAnnotation] = ListBuffer[SourceNameAnnotation]()
+class CollectSourceNames {
 
-  def execute(annotations: Seq[Annotation]) = {
-    val sourceNames = annotations.filter {
-      case s: SourceNameAnnotation => true;
-      case _ => false
-    }
+  def execute(annotations: Seq[Annotation]): Unit = {
+    val sourceNames = annotations.collect { case a: SourceNameAnnotation => a}
+    val refs = sourceNames.map(a => a.target)
+    println("Total number of source size:")
     println(sourceNames.size)
-  }
-
-  def visitModule()(m: DefModule): Unit = {
-    // Set ledger to current module name
-    m.foreachPort(visitPort())
-  }
-
-  def visitPort()(p: Port): Unit = {
+    // need to filter out symbols that doesn't exist any more
+    // need to get the symbol table out from the annotation
+    val tables = annotations.collect { case a: HGDBSymbolTableAnnotation => a }
+    if (tables.nonEmpty) {
+      val table = tables.head
+      table.table.serialize(refs)
+    }
   }
 }
 
 class CollectSourceNamesTransform extends Transform with DependencyAPIMigration with RegisteredTransform {
-  override def prerequisites: Seq[TransformDependency] = Forms.LowFormOptimized
+  override def prerequisites: Seq[TransformDependency] = Forms.LowFormOptimized ++ Seq(Dependency[AnalyzeCircuit])
+
+  override def invalidates(xform: Transform): Boolean = false
+
   def execute(state: CircuitState): CircuitState = {
-    val p = new CollectSourceNames("");
+    val p = new CollectSourceNames()
     p.execute(state.annotations)
-    state;
+    state
   }
 
   val options = Seq(
     new ShellOption[String](
       longOption = "-g",
       toAnnotationSeq = (a: String) =>
-        Seq(HGDBPassAnnotationOption.parse(a), RunFirrtlTransformAnnotation(new CollectSourceNamesTransform)),
+        Seq(HGDBPassAnnotationFilenameOption.parse(a), RunFirrtlTransformAnnotation(new CollectSourceNamesTransform)),
       helpText = "Enable debugging symbol",
     )
   )

@@ -39,5 +39,5 @@ FILE="${CURRENT_DIR}/firrtl"
 # shellcheck disable=SC2086
 echo "#!/usr/bin/env bash" > ${FILE}
 echo "java -cp \"${FIRRTL_JAR}:${HGDB_JAR}\" firrtl.stage.FirrtlMain \
-    --custom-transforms hgdb.AnalyzeCircuit \${@:1}" >> ${FILE}
+    --custom-transforms hgdb.CollectSourceNamesTransform \${@:1}" >> ${FILE}
 chmod +x "${FILE}"
