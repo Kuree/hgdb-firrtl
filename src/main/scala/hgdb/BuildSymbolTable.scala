@@ -186,7 +186,7 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   }
 
   private def get_var_names_from_type(t: Type, var_name: String, concat_str: String): ListBuffer[String] = {
-    val result = new ListBuffer[String]()
+    var result = new ListBuffer[String]()
     t match {
       case b: BundleType =>
         b.fields.foreach(f => {
@@ -196,7 +196,7 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
           })
         })
       case v: VectorType =>
-        get_vector_names(v, var_name, concat_str)
+        result = result ++ get_vector_names(v, var_name, concat_str)
       case _ => result += var_name
     }
     result
@@ -332,8 +332,6 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
       println_(sb, s"[$name.locals]")
       output_node(sb, valid_nodes)
     }
-
-    // node are typically local
 
     sb.result()
   }
@@ -474,7 +472,7 @@ case class HGDBPassOptimizationOption(on: Boolean) extends NoTargetAnnotation {
 
 object HGDBPassOptimizationOption {
   def parse(t: String): HGDBPassOptimizationOption = {
-    HGDBPassOptimizationOption(t == "1")
+    HGDBPassOptimizationOption(t == "0")
   }
 }
 
@@ -493,6 +491,7 @@ case class HGDBSymbolTableAnnotation(table: SymbolTable) extends NoTargetAnnotat
 class AnalyzeCircuit extends Transform with DependencyAPIMigration with RegisteredTransform {
   // see https://gist.github.com/seldridge/0959d714fba6857c5f71ebc7c9044fcf
   override def prerequisites: Seq[TransformDependency] = Forms.HighForm
+  override def optionalPrerequisites: Seq[TransformDependency] = Forms.LowFormOptimized
 
   override def invalidates(xform: Transform): Boolean = false
 
@@ -504,7 +503,7 @@ class AnalyzeCircuit extends Transform with DependencyAPIMigration with Register
     }
 
     val debug_annotation = state.annotations.collect { case a: HGDBPassOptimizationOption => a }
-    var debugMode = true
+    var debugMode = false
     if (debug_annotation.nonEmpty) {
       debugMode = debug_annotation.head.on
     }
@@ -544,8 +543,6 @@ class CollectSourceNames {
   def execute(annotations: Seq[Annotation]): Unit = {
     val sourceNames = annotations.collect { case a: SourceNameAnnotation => a}
     val refs = sourceNames.map(a => a.target)
-    println("Total number of source size:")
-    println(sourceNames.size)
     // need to filter out symbols that doesn't exist any more
     // need to get the symbol table out from the annotation
     val tables = annotations.collect { case a: HGDBSymbolTableAnnotation => a }
@@ -557,7 +554,7 @@ class CollectSourceNames {
 }
 
 class CollectSourceNamesTransform extends Transform with DependencyAPIMigration with RegisteredTransform {
-  override def prerequisites: Seq[TransformDependency] = Forms.LowFormOptimized ++ Seq(Dependency[AnalyzeCircuit])
+  override def prerequisites: Seq[TransformDependency] = Forms.LowForm ++ Seq(Dependency[AnalyzeCircuit])
 
   override def invalidates(xform: Transform): Boolean = false
 

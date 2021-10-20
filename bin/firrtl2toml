@@ -9,4 +9,4 @@ fi
 
 ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-"${ROOT}"/firrtl -i "$1" -hgdb "$2"
+"${ROOT}"/firrtl -i "$1" --hgdb-toml "$2" -O 0
