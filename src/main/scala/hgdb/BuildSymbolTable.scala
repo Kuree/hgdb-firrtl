@@ -304,7 +304,10 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
       fix_stmt_cond()
       println_(sb, "breakpoints = [")
       stmts.foreach(s => {
-        println_(sb, "[\"" + s.fn_info + "\", \"" + s.cond + "\"],")
+        if (s.fn_info.nonEmpty) {
+          // filename could be empty due to optimization
+          println_(sb, "[\"" + s.fn_info + "\", \"" + s.cond + "\"],")
+        }
       })
       println_(sb, "]")
     }
