@@ -3,7 +3,7 @@ package hgdb
 
 import firrtl.{CircuitState, Transform, _}
 import firrtl.annotations.{Annotation, CircuitTarget, ModuleTarget, NoTargetAnnotation, ReferenceTarget, SingleTargetAnnotation}
-import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefNode, DefRegister, DefWire, Field, FileInfo, Info, Reference, SubField, SubIndex, Type, VectorType}
+import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefNode, DefRegister, DefWire, Field, FileInfo, Info, MultiInfo, Reference, SubField, SubIndex, Type, VectorType}
 import firrtl.options.{Dependency, RegisteredTransform, ShellOption}
 import firrtl.stage.{Forms, RunFirrtlTransformAnnotation}
 import firrtl.stage.TransformManager.TransformDependency
@@ -42,12 +42,18 @@ class Stack {
 }
 
 object Util {
-  def getInfo(info: Info): String = {
+  def getInfo(info: Info): Seq[String] = {
     info match {
       case f: FileInfo =>
-        f.unescaped
+        Seq(f.unescaped)
+      case f: MultiInfo =>
+        var r = Seq[String]()
+        f.infos.foreach(i => {
+          r = r ++ getInfo(i)
+        })
+        r
       case _ =>
-        ""
+        Seq()
     }
   }
 }
@@ -56,7 +62,7 @@ case class StatementInfo(fn_info: String, cond: String, target: Expression) exte
   def compare(other: StatementInfo): Int = this.fn_info compare other.fn_info
 }
 
-case class ModuleInstantiation(def_name: String, inst_name: String)
+case class ModuleInstantiation(def_name: String, inst_name: String, fn: String)
 
 class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   private val name = m.name
@@ -98,10 +104,13 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   def add_node(n: DefNode): DontTouchAnnotation = {
     if (n.name(0) != '_') {
       nodes += n
-      // this is also an statement
-      val fn = Util.getInfo(n.info)
-      stmts += StatementInfo(fn, "1", n.value)
     }
+    // can also be a statement
+    val fn = Util.getInfo(n.info)
+    fn.foreach(f => {
+      stmts += StatementInfo(f, "1", n.value)
+    })
+
     new DontTouchAnnotation(mTarget.ref(n.name))
   }
 
@@ -109,8 +118,10 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
     SourceNameAnnotation(mTarget.ref(n.name))
   }
 
-  def add_instance(def_name: String, inst_name: String): Unit = {
-    instances += ModuleInstantiation(def_name, inst_name)
+  def add_instance(inst: DefInstance): Unit = {
+    val fns = Util.getInfo(inst.info)
+    val fn = if (fns.nonEmpty) fns.head else ""
+    instances += ModuleInstantiation(inst.module, inst.name, fn)
   }
 
   def anno_instance(inst: DefInstance): SourceNameAnnotation = {
@@ -418,14 +429,15 @@ class AnalyzeSymbolTable(filename: String, main: String) {
   def visitStatement(table: SymbolTable)(s: Statement): Unit = {
     s.foreachStmt {
       case d: DefInstance =>
-        table.current_module().add_instance(d.module, d.name)
+        table.current_module().add_instance(d)
         sourceNames += table.current_module().anno_instance(d)
       case Conditionally(info, pred, conseq, alt) =>
         val fn = Util.getInfo(info)
         // that particular if statement
-        if (fn.nonEmpty) {
-          table.current_module().add_stmt(fn, null)
-        }
+        fn.foreach(f => {
+          table.current_module().add_stmt(f, null)
+        })
+
         // push the condition
         table.current_module().add_pred(pred)
         visitStatement(table)(conseq)
@@ -435,10 +447,9 @@ class AnalyzeSymbolTable(filename: String, main: String) {
         table.current_module().pop_pred()
       case c: Connect =>
         val fn = Util.getInfo(c.info)
-        if (fn.nonEmpty) {
-          // add to statement
-          table.current_module().add_stmt(fn, c.loc)
-        }
+        fn.foreach(f => {
+          table.current_module().add_stmt(f, c.loc)
+        })
       case b: Block =>
         b.stmts.foreach(s => visitStatement(table)(s))
       case reg: DefRegister =>
