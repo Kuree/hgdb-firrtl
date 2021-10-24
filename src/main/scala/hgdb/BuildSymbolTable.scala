@@ -272,7 +272,10 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
       // we assume it's already flattened since it doesn't hold any expression for the target
       // the type is always UnknownType
       val fn = Util.getInfo(n.info)
-      println_(sb, "\"" + name + "\" = [\"" + name + "\", \"" + fn + "\"]")
+      if (fn.nonEmpty) {
+        val f = fn.head
+        println_(sb, "\"" + name + "\" = [\"" + name + "\", \"" + f + "\"]")
+      }
     })
   }
 
