@@ -508,6 +508,7 @@ case class HGDBSymbolTableAnnotation(table: SymbolTable) extends NoTargetAnnotat
 class AnalyzeCircuit extends Transform with DependencyAPIMigration with RegisteredTransform {
   // see https://gist.github.com/seldridge/0959d714fba6857c5f71ebc7c9044fcf
   override def prerequisites: Seq[TransformDependency] = Forms.HighForm
+
   override def optionalPrerequisiteOf: Seq[TransformDependency] = Seq(Dependency(firrtl.passes.PullMuxes))
 
   override def invalidates(xform: Transform): Boolean = false
@@ -558,7 +559,7 @@ class AnalyzeCircuit extends Transform with DependencyAPIMigration with Register
 class CollectSourceNames {
 
   def execute(annotations: Seq[Annotation]): Unit = {
-    val sourceNames = annotations.collect { case a: SourceNameAnnotation => a}
+    val sourceNames = annotations.collect { case a: SourceNameAnnotation => a }
     val refs = sourceNames.map(a => a.target)
     // need to filter out symbols that doesn't exist any more
     // need to get the symbol table out from the annotation
@@ -572,6 +573,7 @@ class CollectSourceNames {
 
 class CollectSourceNamesTransform extends Transform with DependencyAPIMigration with RegisteredTransform {
   override def prerequisites: Seq[TransformDependency] = Forms.LowForm ++ Seq(Dependency[AnalyzeCircuit])
+
   override def optionalPrerequisites: Seq[TransformDependency] = Forms.LowFormOptimized
 
   override def invalidates(xform: Transform): Boolean = false
@@ -583,11 +585,5 @@ class CollectSourceNamesTransform extends Transform with DependencyAPIMigration 
   }
 
   val options = Seq(
-    new ShellOption[String](
-      longOption = "-g",
-      toAnnotationSeq = (a: String) =>
-        Seq(HGDBPassAnnotationFilenameOption.parse(a), RunFirrtlTransformAnnotation(new CollectSourceNamesTransform)),
-      helpText = "Enable debugging symbol",
-    )
   )
 }
