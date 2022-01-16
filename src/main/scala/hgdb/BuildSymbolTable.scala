@@ -3,7 +3,7 @@ package hgdb
 
 import firrtl.{CircuitState, Transform, _}
 import firrtl.annotations.{Annotation, CircuitTarget, ModuleTarget, NoTargetAnnotation, ReferenceTarget, SingleTargetAnnotation}
-import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefNode, DefRegister, DefWire, Field, FileInfo, Info, MultiInfo, Reference, SubField, SubIndex, Type, VectorType}
+import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefNode, DefRegister, DefWire, Field, FileInfo, Info, MultiInfo, Reference, SubField, SubIndex, Type, UIntLiteral, VectorType}
 import firrtl.options.{Dependency, RegisteredTransform, ShellOption}
 import firrtl.stage.{Forms, RunFirrtlTransformAnnotation}
 import firrtl.stage.TransformManager.TransformDependency
@@ -361,6 +361,7 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
       // table!
       case sub: SubField => exprToString(sub.expr) + "_" + sub.name
       case sub: SubIndex => exprToString(sub.expr) + "[" + sub.value.toString + "]"
+      case l: UIntLiteral => l.value.toString()
       case _ =>
         ""
     }
