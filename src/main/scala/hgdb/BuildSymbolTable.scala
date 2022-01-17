@@ -73,6 +73,7 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   private val instances = ListBuffer[ModuleInstantiation]()
   private val condStack = new Stack()
   private var stmts = mutable.SortedSet[StatementInfo]()
+  private var assignments = mutable.SortedSet[StatementInfo]()
 
   def add_port(port: Port): DontTouchAnnotation = {
     ports += port
@@ -146,6 +147,12 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
     val cond = condStack.and()
     val entry = StatementInfo(fn, cond, variable)
     stmts += entry
+  }
+
+  def add_assign(fn: String, variable: Expression): Unit = {
+    val cond = "";
+    val entry = StatementInfo(fn, cond, variable)
+    assignments += entry
   }
 
   // need to build a map to compute the reset table
@@ -223,6 +230,13 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
         result = get_var_names_from_type(r.tpe, r.name, concat_str)
       case w: DefWire =>
         result = get_var_names_from_type(w.tpe, w.name, concat_str)
+      case r: Reference =>
+        result += r.name
+      case sub: SubField =>
+        val names = get_var_names(sub.expr, concat_str)
+        names.foreach(n => {
+          result += n + concat_str + sub.name
+        })
       case _ =>
     }
     result
@@ -321,6 +335,22 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
         if (s.fn_info.nonEmpty) {
           // filename could be empty due to optimization
           println_(sb, "[\"" + s.fn_info + "\", \"" + s.cond + "\"],")
+        }
+      })
+      println_(sb, "]")
+    }
+
+    if (assignments.nonEmpty) {
+      // serialize the assignments
+      println_(sb, "assignments = [")
+      assignments.foreach(s => {
+        if (s.fn_info.nonEmpty) {
+          val target_str = get_var_names(s.target, "_")
+          val var_str = get_var_names(s.target, ".")
+          for (i <- target_str.indices) {
+            // [loc, target, var, cond]
+            println_(sb, "[\"" + s.fn_info + "\", \"" + target_str(i) + "\", \"" + var_str(i) + "\", \"" + s.cond + "\"],")
+          }
         }
       })
       println_(sb, "]")
@@ -449,10 +479,11 @@ class AnalyzeSymbolTable(filename: String, main: String) {
         table.current_module().add_not_pred(pred)
         visitStatement(table)(alt)
         table.current_module().pop_pred()
-      case c: Connect =>
-        val fn = Util.getInfo(c.info)
+      case Connect(info, loc, _) =>
+        val fn = Util.getInfo(info)
         fn.foreach(f => {
-          table.current_module().add_stmt(f, c.loc)
+          table.current_module().add_stmt(f, loc)
+          table.current_module().add_assign(f, loc)
         })
       case b: Block =>
         b.stmts.foreach(s => visitStatement(table)(s))
@@ -469,6 +500,8 @@ class AnalyzeSymbolTable(filename: String, main: String) {
         val a = table.current_module().add_node(n)
         dontTouches += a
         sourceNames += table.current_module().anno_node(n)
+      // it seems like nodes are temporal variables. we don't create assignment
+      // for now
       case _ =>
     }
   }
