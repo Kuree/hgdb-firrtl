@@ -237,6 +237,12 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
         names.foreach(n => {
           result += n + concat_str + sub.name
         })
+
+      case sub: SubIndex =>
+        val names = get_var_names(sub.expr, concat_str)
+        names.foreach(n => {
+          result += n + concat_str + sub.value.toString
+        })
       case _ =>
     }
     result
