@@ -39,6 +39,8 @@ jobs:
       run: |
         # convert firrtl to toml
         ./bin/firrtl2toml tests/ImplicitStateVendingMachine.fir tests/ImplicitStateVendingMachine.toml
+        ./bin/firrtl2toml tests/REG.fir tests/REG.toml
         # convert toml to hgdb
         toml2hgdb tests/ImplicitStateVendingMachine.toml tests/ImplicitStateVendingMachine.db
+        toml2hgdb tests/REG.toml tests/REG.db
         pytest tests/
