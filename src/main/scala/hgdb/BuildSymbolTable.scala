@@ -3,7 +3,7 @@ package hgdb
 
 import firrtl.{CircuitState, Transform, _}
 import firrtl.annotations.{Annotation, CircuitTarget, ModuleTarget, NoTargetAnnotation, ReferenceTarget, SingleTargetAnnotation}
-import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefNode, DefRegister, DefWire, Field, FileInfo, Info, MultiInfo, Reference, SubField, SubIndex, Type, UIntLiteral, VectorType}
+import firrtl.ir.{Block, BundleType, Circuit, Conditionally, Connect, DefInstance, DefNode, DefRegister, DefWire, Field, FileInfo, Info, IntWidth, MultiInfo, Reference, SubAccess, SubField, SubIndex, Type, UIntLiteral, VectorType, Width}
 import firrtl.options.{Dependency, RegisteredTransform, ShellOption}
 import firrtl.stage.{Forms, RunFirrtlTransformAnnotation}
 import firrtl.stage.TransformManager.TransformDependency
@@ -56,6 +56,19 @@ object Util {
         Seq()
     }
   }
+
+  def getWidth(tpe: Type): Width = {
+    tpe match {
+      case v: VectorType =>
+        IntWidth(v.size)
+      case _ =>
+        var result: Width = IntWidth(0)
+        tpe.foreachWidth(w => {
+          result = result + w
+        })
+        result
+    }
+  }
 }
 
 case class StatementInfo(fn_info: String, cond: String, target: Expression) {
@@ -72,7 +85,7 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   private val instances = ListBuffer[ModuleInstantiation]()
   private val condStack = new Stack()
   private var stmts = ListBuffer[StatementInfo]()
-  private var assignments = ListBuffer[StatementInfo]()
+  private val assignments = ListBuffer[StatementInfo]()
 
   def add_port(port: Port): DontTouchAnnotation = {
     ports += port
@@ -149,7 +162,10 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   }
 
   def add_assign(fn: String, variable: Expression): Unit = {
-    val cond = "";
+    add_assign(fn, variable, "")
+  }
+
+  def add_assign(fn: String, variable: Expression, cond: String): Unit = {
     val entry = StatementInfo(fn, cond, variable)
     assignments += entry
   }
@@ -242,6 +258,31 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
         names.foreach(n => {
           result += n + concat_str + sub.value.toString
         })
+      case sub: SubAccess =>
+        val target = sub.expr
+        val index = sub.index
+        // get width of the type, should be min of the target and index size
+        val target_width = Util.getWidth(target.tpe)
+        val index_width = Util.getWidth(index.tpe)
+        val rtl_names = get_var_names(target, "_")
+        // both of them have to be int width
+        target_width match {
+          case target_i: IntWidth =>
+            index_width match {
+              case index_t: IntWidth =>
+                val i_w: BigInt = 1 << index_t.width.toInt
+                val w_w: BigInt = target_i.width
+                val width = (if (i_w > w_w) i_w else w_w).toInt
+                // need to flatten out
+                for (i <- 0 until width) {
+                  if (concat_str == "_") {
+                    result += rtl_names.head + "[" + i.toString + "]"
+                  } else {
+                    result += rtl_names.head + "." + i.toString
+                  }
+                }
+            }
+        }
       case _ =>
     }
     result
@@ -323,7 +364,37 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
       })
       r.nonEmpty
     })
+  }
 
+  def output_assign(sb: StringBuilder): Unit = {
+    if (assignments.nonEmpty) {
+      // serialize the assignments
+      println_(sb, "assignments = [")
+      assignments.foreach(s => {
+        if (s.fn_info.nonEmpty) {
+          val target_str = get_var_names(s.target, "_")
+          val var_str = get_var_names(s.target, ".")
+          // special case for sub access
+          s.target match {
+            case sub: SubAccess =>
+              val cond_str = get_var_names(sub.index, "_")
+              // we assume the sub access doesn't change the size structure. in other words, no bundled sub access
+              // as an array (is that even possible?)
+              for (i <- target_str.indices) {
+                // [loc, target, var, cond]
+                println_(sb,
+                  "[\"" + s.fn_info + "\", \"" + target_str(i) + "\", \"" + var_str(i) + "\", \"" + cond_str.head + "==" + i.toString + "\"],")
+              }
+            case _ =>
+              for (i <- target_str.indices) {
+                // [loc, target, var, cond]
+                println_(sb, "[\"" + s.fn_info + "\", \"" + target_str(i) + "\", \"" + var_str(i) + "\", \"" + s.cond + "\"],")
+              }
+          }
+        }
+      })
+      println_(sb, "]")
+    }
   }
 
   // need to serialize to toml format that can be directly converted into
@@ -345,21 +416,7 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
       println_(sb, "]")
     }
 
-    if (assignments.nonEmpty) {
-      // serialize the assignments
-      println_(sb, "assignments = [")
-      assignments.foreach(s => {
-        if (s.fn_info.nonEmpty) {
-          val target_str = get_var_names(s.target, "_")
-          val var_str = get_var_names(s.target, ".")
-          for (i <- target_str.indices) {
-            // [loc, target, var, cond]
-            println_(sb, "[\"" + s.fn_info + "\", \"" + target_str(i) + "\", \"" + var_str(i) + "\", \"" + s.cond + "\"],")
-          }
-        }
-      })
-      println_(sb, "]")
-    }
+    output_assign(sb)
 
     val currentRefs = getCurrentModule(refTargets)
 
