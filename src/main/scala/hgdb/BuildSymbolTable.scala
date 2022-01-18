@@ -58,8 +58,7 @@ object Util {
   }
 }
 
-case class StatementInfo(fn_info: String, cond: String, target: Expression) extends Ordered[StatementInfo] {
-  def compare(other: StatementInfo): Int = this.fn_info compare other.fn_info
+case class StatementInfo(fn_info: String, cond: String, target: Expression) {
 }
 
 case class ModuleInstantiation(def_name: String, inst_name: String, fn: String)
@@ -72,8 +71,8 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
   private val nodes = ListBuffer[DefNode]()
   private val instances = ListBuffer[ModuleInstantiation]()
   private val condStack = new Stack()
-  private var stmts = mutable.SortedSet[StatementInfo]()
-  private var assignments = mutable.SortedSet[StatementInfo]()
+  private var stmts = ListBuffer[StatementInfo]()
+  private var assignments = ListBuffer[StatementInfo]()
 
   def add_port(port: Port): DontTouchAnnotation = {
     ports += port
@@ -274,7 +273,7 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
         stmt
       }
     })
-    stmts = mutable.SortedSet[StatementInfo]() ++ maps
+    stmts = ListBuffer[StatementInfo]() ++ maps
   }
 
   def output_var[T](sb: StringBuilder, vars: ListBuffer[T]): Unit = {
