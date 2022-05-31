@@ -380,10 +380,12 @@ class ModuleDef(val m: DefModule, val mTarget: ModuleTarget) {
               val cond_str = get_var_names(sub.index, "_")
               // we assume the sub access doesn't change the size structure. in other words, no bundled sub access
               // as an array (is that even possible?)
-              for (i <- target_str.indices) {
-                // [loc, target, var, cond]
-                println_(sb,
-                  "[\"" + s.fn_info + "\", \"" + target_str(i) + "\", \"" + var_str(i) + "\", \"" + cond_str.head + "==" + i.toString + "\"],")
+              if (cond_str.nonEmpty) {
+                for (i <- target_str.indices) {
+                  // [loc, target, var, cond]
+                  println_(sb,
+                    "[\"" + s.fn_info + "\", \"" + target_str(i) + "\", \"" + var_str(i) + "\", \"" + cond_str.head + "==" + i.toString + "\"],")
+                }
               }
             case _ =>
               for (i <- target_str.indices) {
